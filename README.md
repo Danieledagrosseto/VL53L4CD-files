@@ -1,10 +1,29 @@
 # VL53L4CD Board and API Library
 
+![Language](https://img.shields.io/badge/language-C-blue)
+![Platform](https://img.shields.io/badge/platform-I2C%20sensor%20module-green)
+![Status](https://img.shields.io/badge/status-active-success)
+
 This repository contains:
 
 - a VL53L4CD breakout board design,
 - board images and schematics,
 - and a reusable C template module for VL53L4CD integration over I2C.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Included Files](#included-files)
+- [Board Overview](#board-overview)
+- [J1 Connector Pins](#j1-connector-pins)
+- [Images](#images)
+- [Quick Start](#quick-start)
+- [API Highlights](#api-highlights)
+- [Documentation](#documentation)
+
+## Overview
+
+This repository provides hardware reference material and a transport-agnostic C template for integrating the VL53L4CD sensor using a callback-based I2C API.
 
 ## Included Files
 
@@ -19,7 +38,7 @@ Main reusable module files:
 The breakout board exposes power and I2C through connector J1 and includes onboard weak 10K I2C pull-ups.
 If you want to use external pull-ups, cut jumpers `J2` and `J3`.
 
-### J1 Connector Pins
+## J1 Connector Pins
 
 - Pin 1 (square): VDD 3V to 5.5V
 - Pin 2: SDA
