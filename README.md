@@ -23,6 +23,7 @@ This repository contains:
 
 ## Overview
 
+VL53L4CD ToF breakout with non‑volatile I2C address. Perfect for multi‑sensor I2C setups, SRF02/06 replacement, and robotics distance sensing.
 This repository provides hardware reference material and a transport-agnostic C template for integrating the VL53L4CD sensor using a callback-based I2C API.
 
 ## Included Files
