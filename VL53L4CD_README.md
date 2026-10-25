@@ -370,6 +370,125 @@ The measured range and attempt count depend on the target and sensor. API error
 scanner found the sensor's current address, that `SENSOR_ADDRESS` matches it,
 and that power, ground, SDA, and SCL are connected correctly.
 
+## Changing the I2C Address
+
+These examples use this breakout's template protocol, not the bare ST sensor
+register API. `vl53l4cd_template_set_new_address` sends the unlock sequence
+`0xA0`, `0xAA`, `0xA5`, then the new address, each paired with command `0x00`
+and sent to the **current** address.
+
+- Find the current address first; the values below are examples.
+- Pass unshifted **7-bit** addresses. Choose an unused, non-reserved address
+  from `0x08` through `0x77`; the helper does not validate this for you.
+- Connect only the board being readdressed if multiple boards share its current
+  address. Program them individually before connecting them to the same bus.
+- After sending the command, use the new address for every subsequent request.
+  The template context does not store or update a device address.
+- A successful return confirms the I2C writes, not that the board has finished
+  applying the change. The examples wait 100 ms as a settling interval and
+  verify communication at the new address; adjust the wait for your firmware.
+- Run the change once, not in the measurement loop. After a reset or power
+  cycle, scan again to confirm the address retained by your board's firmware
+  before running the change again.
+
+### PSoC Creator: Change from 0x70 to 0x71
+
+Use the callbacks and configuration from
+[PSoC Creator integration](#example-psoc-creator-integration). Enable global
+interrupts and start the I2C component before calling `app_init()`. Configure
+your project's `printf` output (for example, through UART) to see diagnostics.
+
+Inside `app_init()`, after successful `vl53l4cd_template_init`, replace the
+existing measurement block with the following. It reuses `sensor`, `m`, and
+`attempts` declared in that example; also include `<stdio.h>` for `printf`.
+
+```c
+{
+    const uint8_t old_address = 0x70u;
+    const uint8_t new_address = 0x71u;
+    vl53l4cd_status_t status;
+
+    status = vl53l4cd_template_set_new_address(&sensor, old_address, new_address);
+    if (status != VL53L4CD_OK) {
+        printf("Address change failed: %d\r\n", (int)status);
+        return;
+    }
+
+    CyDelay(100u);
+    status = vl53l4cd_template_get_measurement(
+        &sensor, new_address, VL53L4CD_UNIT_MM, &m, &attempts);
+    if (status != VL53L4CD_OK) {
+        printf("Verification at 0x%02X failed: %d; scan the bus\r\n",
+               (unsigned int)new_address, (int)status);
+        return;
+    }
+
+    printf("Sensor responds at 0x%02X: range=%u mm\r\n",
+           (unsigned int)new_address, (unsigned int)m.range_mm);
+}
+```
+
+Use `0x71u` in subsequent calls, including any sensor-address array in your
+application. If verification fails, scan the bus before retrying: the board
+may already have changed address even though the measurement failed.
+
+### Arduino UNO R3: Change from 0x73 to 0x74
+
+Start with the complete
+[first-measurement sketch](#upload-the-measurement-sketch), including its
+callbacks and template files. Keep `SENSOR_ADDRESS` set to the address found
+by your scan (`0x73` in this example).
+
+Add these declarations beside the existing global `sensor` and `sensor_ready`
+variables:
+
+```cpp
+static const uint8_t NEW_SENSOR_ADDRESS = 0x74u;
+static uint8_t sensor_address = SENSOR_ADDRESS;
+```
+
+In `setup()`, replace only the successful initialization `else` block (the one
+that prints `"VL53L4CD ready"`) with:
+
+```cpp
+    else {
+        status = vl53l4cd_template_set_new_address(
+            &sensor, sensor_address, NEW_SENSOR_ADDRESS);
+        if (status != VL53L4CD_OK) {
+            Serial.print("Address change failed: ");
+            Serial.println((int)status);
+            return;
+        }
+
+        sensor_address = NEW_SENSOR_ADDRESS;
+        delay(100u);
+
+        vl53l4cd_measurement_t measurement;
+        uint16_t attempts = 0u;
+        status = vl53l4cd_template_get_measurement(
+            &sensor, sensor_address, VL53L4CD_UNIT_MM, &measurement, &attempts);
+        if (status != VL53L4CD_OK) {
+            Serial.print("Verification at new address failed: ");
+            Serial.println((int)status);
+            Serial.println("Scan the bus before retrying");
+            return;
+        }
+
+        sensor_ready = true;
+        Serial.print("Sensor responds at 0x");
+        Serial.println(sensor_address, HEX);
+    }
+```
+
+In `loop()`, replace the `SENSOR_ADDRESS` argument of
+`vl53l4cd_template_get_measurement` with `sensor_address` so measurements
+continue at the new address. If either step fails, `sensor_ready` stays false
+and the loop does not attempt measurements.
+
+After programming the address, use the ordinary first-measurement sketch with
+`SENSOR_ADDRESS` set to the newly confirmed address. Do not leave the one-time
+address-change code enabled on every boot.
+
 ## Example: Generic C Platform Integration
 
 This snippet shows a generic wrapper style where your board support package (BSP) provides low-level I2C and delay functions.
