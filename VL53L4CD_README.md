@@ -10,7 +10,7 @@
 
 ## Board Schematics
 
-- breakout schematics.pdf
+- [breakout schematics.pdf](./breakout%20schematics.pdf)
 
 ## J1 Connector Pins
 
@@ -19,6 +19,40 @@
 - Pin 3: SCL
 - Pin 4: NU
 - Pin 5: GND
+
+## Files in This Repository
+
+The template files are in the repository root:
+
+- [vl53l4cd_template.h](./vl53l4cd_template.h) — public API and types.
+- [vl53l4cd_template.c](./vl53l4cd_template.c) — reusable host-side implementation.
+- [vl53l4cd_template_demo.c](./vl53l4cd_template_demo.c) — optional `printf`-based demonstration helpers.
+- [example_main.c](./example_main.c) — PSoC Creator example application.
+
+For the Arduino UNO R3 walkthrough below, use only `vl53l4cd_template.h` and
+`vl53l4cd_template.c`; the other C files are optional platform examples.
+Board photos are in `images/`, and the board schematic is
+`breakout schematics.pdf`.
+
+I2C addresses in the examples are illustrative 7-bit values. A board's
+currently programmed address may differ; use the address configured in your
+sensor.
+
+## Arduino UNO R3 Wiring
+
+With the sensor board and Arduino disconnected from power, connect:
+
+| Arduino UNO R3 | Breakout J1 |
+| --- | --- |
+| 5V | Pin 1 — VDD |
+| A4 / SDA | Pin 2 — SDA |
+| A5 / SCL | Pin 3 — SCL |
+| GND | Pin 5 — GND |
+| Not connected | Pin 4 — NU |
+
+Reconnect power only after checking the wiring. The breakout accepts 3 V to
+5.5 V at VDD. Other Arduino models may use different I2C pins; check the
+board's pinout before wiring.
 
 ## I2C Pull-ups
 
@@ -60,11 +94,11 @@ It also parses ranging frames in the same layout used by your existing `main.c`:
 
 ## Quick Start
 
-1. Copy `vl53l4cd_template.h` and `vl53l4cd_template.c` into the new project.
-2. Add the files to the project build.
-3. Implement the callback wrappers for your I2C driver.
-4. Initialize `vl53l4cd_template_t` once.
-5. Use the high-level template API functions for actions and ranging.
+For Arduino UNO R3, follow the complete procedure in
+[Arduino UNO R3: first measurement](#arduino-uno-r3-first-measurement). For a
+different platform, copy `vl53l4cd_template.h` and `vl53l4cd_template.c` into
+your project, add the C source to its build, and implement the I2C and delay
+callbacks for that platform.
 
 ## Example: PSoC Creator Integration
 
@@ -149,14 +183,88 @@ void app_init(void)
 }
 ```
 
-## Example: Arduino Integration
+## Arduino UNO R3: First Measurement
 
-This snippet shows using the template with Arduino `Wire` and `delay`.
+### Create the sketch
 
-```c
+In Arduino IDE, create a sketch named `VL53L4CD_FirstMeasurement` and save it.
+Open the sketch folder from the IDE, then copy `vl53l4cd_template.c` and
+`vl53l4cd_template.h` from this repository into that folder. Replace the
+contents of `VL53L4CD_FirstMeasurement.ino` with the complete example below.
+The folder should contain:
+
+```text
+VL53L4CD_FirstMeasurement/
+  VL53L4CD_FirstMeasurement.ino
+  vl53l4cd_template.c
+  vl53l4cd_template.h
+```
+
+Select **Arduino Uno** and the correct serial port in the IDE. Compile and
+upload the sketch, then open Serial Monitor at **115200 baud**.
+
+### Find the sensor's I2C address
+
+The address is a 7-bit value and may have been changed on the breakout. Do not
+assume that every board uses `0x70`. With the wiring above, upload this
+temporary scanner sketch and open Serial Monitor at 115200 baud:
+
+```cpp
+#include <Wire.h>
+
+void setup()
+{
+    Wire.begin();
+    Serial.begin(115200);
+    while (!Serial) {
+    }
+    Serial.println("I2C scan");
+}
+
+void loop()
+{
+    uint8_t found = 0u;
+
+    for (uint8_t address = 0x08u; address <= 0x7Fu; ++address) {
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0u) {
+            Serial.print("Device found at 0x");
+            if (address < 0x10u) {
+                Serial.print('0');
+            }
+            Serial.println(address, HEX);
+            ++found;
+        }
+    }
+
+    if (found == 0u) {
+        Serial.println("No I2C devices found");
+    }
+    delay(2000u);
+}
+```
+
+Use the address reported for the sensor as `SENSOR_ADDRESS` in the full
+sketch. The scanner reports devices that acknowledge on the bus; it does not
+by itself identify which device responded. If no address appears, check power,
+SDA/SCL wiring, and the selected port before continuing. The address is used
+as a 7-bit value, without shifting it.
+
+### Upload the measurement sketch
+
+The example below uses `0x73` as the address observed during the documented
+UNO R3 test. Change only `SENSOR_ADDRESS` if your scan reports a different
+address.
+
+```cpp
 #include <Arduino.h>
 #include <Wire.h>
 #include "vl53l4cd_template.h"
+
+#define SENSOR_ADDRESS ((uint8_t)0x73u)
+
+static vl53l4cd_template_t sensor;
+static bool sensor_ready = false;
 
 static uint8_t arduino_i2c_write(uint8_t address, const uint8_t *tx, uint8_t tx_len, void *user_ctx)
 {
@@ -192,11 +300,11 @@ static void arduino_delay_ms(uint16_t delay_ms, void *user_ctx)
     delay((unsigned long)delay_ms);
 }
 
-void sensor_setup_example(void)
+void setup(void)
 {
-    static vl53l4cd_template_t sensor;
     vl53l4cd_template_cfg_t cfg;
 
+    Serial.begin(115200);
     Wire.begin();
 
     cfg.i2c_write = arduino_i2c_write;
@@ -207,9 +315,60 @@ void sensor_setup_example(void)
     cfg.poll_interval_ms = 10u;
     cfg.max_poll_count = 100u;
 
-    (void)vl53l4cd_template_init(&sensor, &cfg);
+    vl53l4cd_status_t status = vl53l4cd_template_init(&sensor, &cfg);
+    if (status != VL53L4CD_OK) {
+        Serial.print("Template initialization failed: ");
+        Serial.println((int)status);
+    } else {
+        sensor_ready = true;
+        Serial.println("VL53L4CD ready");
+    }
+}
+
+void loop(void)
+{
+    if (!sensor_ready) {
+        delay(1000u);
+        return;
+    }
+
+    vl53l4cd_measurement_t measurement;
+    uint16_t attempts = 0u;
+    vl53l4cd_status_t status =
+        vl53l4cd_template_get_measurement(
+            &sensor,
+            SENSOR_ADDRESS,
+            VL53L4CD_UNIT_MM,
+            &measurement,
+            &attempts
+        );
+
+    if (status == VL53L4CD_OK) {
+        Serial.print("Range: ");
+        Serial.print(measurement.range_mm);
+        Serial.print(" mm, status: ");
+        Serial.print(measurement.status);
+        Serial.print(", attempts: ");
+        Serial.println(attempts);
+    } else {
+        Serial.print("Measurement failed, API error: ");
+        Serial.println((int)status);
+    }
+
+    delay(200u);
 }
 ```
+
+Expected output includes a repeated line similar to:
+
+```text
+Range: 245 mm, status: 0, attempts: 1
+```
+
+The measured range and attempt count depend on the target and sensor. API error
+`2` is `VL53L4CD_ERR_IO`, meaning an I2C read or write failed. Check that the
+scanner found the sensor's current address, that `SENSOR_ADDRESS` matches it,
+and that power, ground, SDA, and SCL are connected correctly.
 
 ## Example: Generic C Platform Integration
 
@@ -390,7 +549,7 @@ This makes it easy to validate integration quickly in a new project before wirin
 
 - Add both template files to the project.
 - Ensure callbacks return `0` on success.
-- Confirm device I2C address (default in this project was `0x70`).
+- Confirm the sensor's current 7-bit I2C address; do not assume it is `0x70`.
 - Confirm the template API command-ID mapping of your target slave firmware.
 - Tune `poll_interval_ms`, `max_poll_count`, and `max_range_mm` to your system.
 - Route the parsed result to your application logging or telemetry.
@@ -400,4 +559,3 @@ This makes it easy to validate integration quickly in a new project before wirin
 - This module is plain C and does not depend on dynamic memory.
 - It is safe to keep one context per sensor/device instance.
 - If your new target uses a different protocol framing, adapt only this module and keep application code unchanged.
-
